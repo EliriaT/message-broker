@@ -2,20 +2,10 @@
 
 **TODO: Add description**
 
-## Installation
+## Run the app:
+`mix run --no-halt`
+`iex -S mix`
+`PORT=4040 mix run --no-halt`
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `message_broker` to your list of dependencies in `mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:message_broker, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/message_broker](https://hexdocs.pm/message_broker).
-
+## Useful commands:
+`sudo lsof -i -P -n | grep LISTEN` - Check ports that are on LISTEN

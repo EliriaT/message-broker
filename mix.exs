@@ -14,7 +14,8 @@ defmodule MessageBroker.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger],
+      mod: {MessageBroker, []}    #it means that when running  iex -S mix, the application will start by calling Application.start(:message_broker), which then invokes the application callback, which in turn starts the supervision tree
     ]
   end
 
