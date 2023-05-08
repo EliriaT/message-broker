@@ -42,11 +42,14 @@ defmodule Publisher do
     serveLoop(socket)
   end
 
-  defp parseCommands(line) do
+  defp parseCommands(line) when is_binary(line) do
+    line = String.downcase(line)
+
     case String.split(line) do
-      ["CREATE", topic] -> {:ok, {:create, topic}}
-      ["BEGIN", topic] -> {:ok, {:begin, topic}}
-      ["END"] -> {:ok, {:end}}  # to do validate rule , end only after begin
+      ["create", topic] -> {:ok, {:create, topic}}
+      ["begin", topic] -> {:ok, {:begin, topic}}
+      # to do validate rule , end only after begin
+      ["end"] -> {:ok, {:end}}
       _ -> {:error, :unknown_command}
     end
   end

@@ -27,7 +27,7 @@ defmodule Consumer do
         {:ok, line} ->
           case parseCommands(line) do
             {:ok, command} ->
-              runCommand(command)
+              runCommand(command, socket)
 
             {:error, _} = err ->
               err
@@ -42,15 +42,26 @@ defmodule Consumer do
     serveLoop(socket)
   end
 
-  defp parseCommands(line) do
+  # commands are case insensitive
+  defp parseCommands(line) when is_binary(line) do
+    line = String.downcase(line)
+
     case String.split(line) do
-      ["SUB", topic] -> {:ok, {:subscribe, topic}}
-      ["UNSUB", topic] -> {:ok, {:unsubscribe, topic}}
+      ["sub", topic] -> {:ok, {:subscribe, topic}}
+      ["unsub", topic] -> {:ok, {:unsubscribe, topic}}
       _ -> {:error, :unknown_command}
     end
   end
 
-  defp runCommand(_command) do
-    {:ok, "OK\r\n"}
+  defp runCommand(command, socket) do
+    case command do
+      {:subscribe, topic} ->
+        # Should the subscribe be asynchronous or synchronous? if async I can return ok or if not ok
+        Exchanger.subscribe(topic, socket)
+        {:ok, "OK\r\n"}
+
+      _ ->
+        {:ok, "NOT IMPLEMENTED\r\n"}
+    end
   end
 end
