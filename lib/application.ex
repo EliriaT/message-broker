@@ -6,8 +6,10 @@ defmodule MessageBroker do
     port = String.to_integer(System.get_env("PORT") || "4040")
 
     children = [
-      {Task.Supervisor, name: TCPServer.TaskSupervisor},
-      #The server must be permanently started
+      {PublisherSupervisor, name: PublisherSupervisor},
+      # {Task.Supervisor, name: TCPServer.TaskSupervisor},
+
+      # The server must be permanently started, if it crashes, the supervisor will start it again
       Supervisor.child_spec({Task, fn -> TCPServer.accept(port,:publisher) end}, restart: :permanent)
     ]
 
@@ -17,7 +19,4 @@ defmodule MessageBroker do
     # MessageBroker.Supervisor.start_link([])
   end
 
-  def hello do
-    :world
-  end
 end

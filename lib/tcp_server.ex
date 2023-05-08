@@ -20,39 +20,48 @@ defmodule TCPServer do
   defp loop_acceptor(socket) do
     {:ok, client} = :gen_tcp.accept(socket)
 
-    {:ok, pid} = Task.Supervisor.start_child(TCPServer.TaskSupervisor, fn -> serve(client) end)
+    {:ok, pid} = PublisherSupervisor.start_new_child(client)
 
     # this ensures that messages will be send to process pid, but not to the actor that accepted the socket connection. Also ensures that the acceptor
     # will not bring down the clients on crash. Sockets are not tied to the process that accepted them
     # if the tcp acceptor server crashes, the connections are not crashed
     :ok = :gen_tcp.controlling_process(client, pid)
 
+    # start serving the connection
+    Publisher.serveSocket(pid)
+
     loop_acceptor(socket)
   end
 
-  defp serve(socket) do
-    # probably each individual actor will have to have this serve
-    socket
-    |> read_line()
-    |> write_line(socket)
-
-    serve(socket)
-  end
-
-  defp read_line(socket) do
+  def read_line(socket) do
     case :gen_tcp.recv(socket, 0) do
       {:ok, data} ->
-        data
+        {:ok, data}
 
-        # {:error, :closed} ->
-        #   "closed"
-
-        # {:error, :enotconn} ->
-        #   nil
+        {:error, _} = err ->
+          err
     end
   end
 
-  defp write_line(line, socket) do
-    :gen_tcp.send(socket, line)
+  def write_line(socket, {:ok, text}) do
+    :gen_tcp.send(socket, text)
+  end
+
+  def write_line(socket, {:error, :unknown_command}) do
+    # Known error; write to the client
+    :gen_tcp.send(socket, "UNKNOWN COMMAND\r\n")
+  end
+
+  def write_line(_socket, {:error, :closed}) do
+    # The connection was closed, exit politely
+    IO.puts("Connection on process #{inspect(self())} closed by client")
+    exit(:shutdown)
+    # Supervisor.which_children(PublisherSupervisor)
+  end
+
+  def write_line(socket, {:error, error}) do
+    # Unknown error; write to the client and exit
+    :gen_tcp.send(socket, "ERROR\r\n")
+    exit(error)
   end
 end
