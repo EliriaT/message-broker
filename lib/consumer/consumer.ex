@@ -60,6 +60,10 @@ defmodule Consumer do
         Exchanger.subscribe(topic, socket)
         {:ok, "OK\r\n"}
 
+      {:unsubscribe, topic} ->
+        Exchanger.unsubscribe(topic, socket)
+        {:ok, "OK\r\n"}
+
       _ ->
         {:ok, "NOT IMPLEMENTED\r\n"}
     end

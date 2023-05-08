@@ -22,21 +22,43 @@ defmodule Exchanger do
     end
   end
 
-  # if already subscribed
   def subscribe(title, socket) do
     GenServer.cast(Exchanger, {:subscribe, title, socket})
   end
 
-  def handle_cast({:subscribe, title, socket}, state) do
-    pid = case isTopicCreated(title)  do
+  def unsubscribe(title, socket) do
+    GenServer.cast(Exchanger, {:unsubscribe, title, socket})
+  end
+
+  def sendMessage(topic, message) do
+    pid = createTopic(topic)
+    Topic.sendMessageToSubs(pid, message)
+  end
+
+  # creates if not existent, returns the pid
+  def createTopic(title) do
+    case isTopicCreated(title) do
       false ->
         {:ok, pid} = TopicSupervisor.start_new_child(title)
         pid
+
       pid ->
         pid
     end
+  end
+
+  def handle_cast({:subscribe, title, socket}, state) do
+    pid = createTopic(title)
 
     Topic.addSubscriber(pid, socket)
+    {:noreply, state}
+  end
+
+  # unsubscribe from non-existing topics
+  def handle_cast({:unsubscribe, title, socket}, state) do
+    pid = createTopic(title)
+
+    Topic.removeSubscriber(pid, socket)
     {:noreply, state}
   end
 end

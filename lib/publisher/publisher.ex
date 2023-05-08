@@ -27,7 +27,7 @@ defmodule Publisher do
         {:ok, line} ->
           case parseCommands(line) do
             {:ok, command} ->
-              runCommand(command)
+              runCommand(command, socket)
 
             {:error, _} = err ->
               err
@@ -47,14 +47,40 @@ defmodule Publisher do
 
     case String.split(line) do
       ["create", topic] -> {:ok, {:create, topic}}
-      ["begin", topic] -> {:ok, {:begin, topic}}
-      # to do validate rule , end only after begin
-      ["end"] -> {:ok, {:end}}
+      ["pub", topic] -> {:ok, {:pub, topic}}
       _ -> {:error, :unknown_command}
     end
   end
 
-  defp runCommand(_command) do
-    {:ok, "OK\r\n"}
+  defp receiveMessage(topic, message, socket) do
+    case TCPServer.read_line(socket) do
+      {:ok, line} ->
+        case String.split(line) do
+          ["end"] ->
+            Exchanger.sendMessage(topic, message)
+
+          _ ->
+            message = message <> line
+            receiveMessage(topic, message, socket)
+        end
+
+      {:error, _} = err ->
+        TCPServer.write_line(socket, err)
+    end
+  end
+
+  defp runCommand(command, socket) do
+    case command do
+      {:create, topic} ->
+        Exchanger.createTopic(topic)
+        {:ok, "OK\r\n"}
+
+      {:pub, topic} ->
+        receiveMessage(topic, "", socket)
+        {:ok, "OK\r\n"}
+
+      _ ->
+        {:ok, "NOT IMPLEMENTED\r\n"}
+    end
   end
 end

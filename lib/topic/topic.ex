@@ -21,6 +21,14 @@ defmodule Topic do
     GenServer.cast(pid, {:subscribe, socket})
   end
 
+  def removeSubscriber(pid, socket) do
+    GenServer.cast(pid, {:unsubscribe, socket})
+  end
+
+  def sendMessageToSubs(pid,message) do
+    GenServer.cast(pid, {:sendMessage, message})
+  end
+
   # add subscriber only if not subscribed early
   def handle_cast({:subscribe, socket}, state) do
     state =
@@ -37,8 +45,22 @@ defmodule Topic do
     {:noreply, state}
   end
 
+  def handle_cast({:unsubscribe, socket}, state) do
+    filteredSubribers = Enum.filter(Map.get(state, :subscribers), fn s -> s !== socket end)
+    state = Map.put(state, :subscribers, filteredSubribers)
+    {:noreply, state}
+  end
+
   def handle_cast({:subscribers}, state) do
     IO.inspect(state)
+
+    {:noreply, state}
+  end
+
+  def handle_cast({:sendMessage, message}, state) do
+    Enum.each(Map.get(state, :subscribers), fn socket ->
+      TCPServer.write_line(socket, {:ok, message})
+    end)
 
     {:noreply, state}
   end
