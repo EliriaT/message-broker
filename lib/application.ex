@@ -3,14 +3,23 @@ defmodule MessageBroker do
 
   @impl true
   def start(_type, _args) do
-    port = String.to_integer(System.get_env("PORT") || "4040")
+    consumerPort = 4040
+    publisherPort = 4041
 
     children = [
       {PublisherSupervisor, name: PublisherSupervisor},
+      {ConsumerSupervisor, name: ConsumerSupervisor},
       # {Task.Supervisor, name: TCPServer.TaskSupervisor},
 
       # The server must be permanently started, if it crashes, the supervisor will start it again
-      Supervisor.child_spec({Task, fn -> TCPServer.accept(port,:publisher) end}, restart: :permanent)
+      Supervisor.child_spec({Task, fn -> TCPServer.accept(publisherPort, :publisher) end},
+        restart: :permanent,
+        id: :publisherServer
+      ),
+      Supervisor.child_spec({Task, fn -> TCPServer.accept(consumerPort, :consumer) end},
+        restart: :permanent,
+        id: :consumerServer
+      )
     ]
 
     opts = [strategy: :one_for_one, name: MessageBroker.Supervisor]
@@ -18,5 +27,4 @@ defmodule MessageBroker do
 
     # MessageBroker.Supervisor.start_link([])
   end
-
 end
