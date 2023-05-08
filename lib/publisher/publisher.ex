@@ -18,16 +18,40 @@ defmodule Publisher do
 
   def handle_cast({:serve}, state) do
     socket = state.socket
-    processCommand(socket)
+    serveLoop(socket)
   end
 
-  defp processCommand(socket) do
+  defp serveLoop(socket) do
     command =
-      socket
-      |> TCPServer.read_line()
+      case TCPServer.read_line(socket) do
+        {:ok, line} ->
+          case parseCommands(line) do
+            {:ok, command} ->
+              runCommand(command)
 
-    TCPServer.write_line(socket,command)
+            {:error, _} = err ->
+              err
+          end
 
-    processCommand(socket)
+        {:error, _} = err ->
+          err
+      end
+
+    TCPServer.write_line(socket, command)
+
+    serveLoop(socket)
+  end
+
+  defp parseCommands(line) do
+    case String.split(line) do
+      ["CREATE", topic] -> {:ok, {:create, topic}}
+      ["BEGIN", topic] -> {:ok, {:begin, topic}}
+      ["END"] -> {:ok, {:end}}  # to do validate rule , end only after begin
+      _ -> {:error, :unknown_command}
+    end
+  end
+
+  defp runCommand(_command) do
+    {:ok, "OK\r\n"}
   end
 end
