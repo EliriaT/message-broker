@@ -61,11 +61,12 @@ defmodule TCPServer do
     :gen_tcp.send(socket, "UNKNOWN COMMAND\r\n")
   end
 
+  # aici se vede ca consumerul s-a deconectat
   def write_line(_socket, {:error, :closed}) do
     # The connection was closed, exit politely
     IO.puts("Connection on process #{inspect(self())} closed by client")
     exit(:shutdown)
-    # Supervisor.which_children(PublisherSupervisor)
+
   end
 
   def write_line(socket, {:error, error}) do

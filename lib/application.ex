@@ -4,8 +4,12 @@ defmodule MessageBroker do
   # this application is a supervisor in itself
   @impl true
   def start(_type, _args) do
-    :observer.start
-    
+    # IO.puts( Mix.env())
+    # if Mix.env() == :dev do
+    #   # :observer.start()
+    #   IO.puts( Mix.env())
+    # end
+
     consumerPort = 4040
     publisherPort = 4041
 
@@ -13,13 +17,12 @@ defmodule MessageBroker do
       {PublisherSupervisor, {}},
       {ConsumerSupervisor, {}},
       {TopicAndRegistrySupervisor, {}},
-      {Exchanger,{}},
-
+      {Exchanger, {}},
 
       # The server must be permanently started, if it crashes, the supervisor will start it again
       Supervisor.child_spec({Task, fn -> TCPServer.accept(publisherPort, :publisher) end},
         restart: :permanent,
-        id: :publisherServer,
+        id: :publisherServer
       ),
       Supervisor.child_spec({Task, fn -> TCPServer.accept(consumerPort, :consumer) end},
         restart: :permanent,
@@ -30,6 +33,14 @@ defmodule MessageBroker do
     opts = [strategy: :one_for_one, name: MessageBroker.Supervisor]
     Supervisor.start_link(children, opts)
 
-    # MessageBroker.Supervisor.start_link([])
+    TopicSupervisor.start_new_child("deadLetterChan")
+  end
+
+  def main(_args \\ []) do
+    start({}, {})
+
+    receive do
+      _ -> IO.inspect("Hi")
+    end
   end
 end

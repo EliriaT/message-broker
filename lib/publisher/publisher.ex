@@ -64,7 +64,9 @@ defmodule Publisher do
             receiveMessage(topic, message, socket)
         end
 
-      {:error, _} = err ->
+      {:error, errMessage} = err ->
+        message = message <> errMessage
+        Exchanger.sendMessage("deadLetterChan", message)
         TCPServer.write_line(socket, err)
     end
   end
