@@ -16,6 +16,31 @@ defmodule Publisher do
     GenServer.cast(pid, {:serve})
   end
 
+  def sendPUBREC(messageId) do
+    pubrec = %{
+      type: "PUBREC",
+      msgId: messageId
+    }
+
+    case Jason.encode(pubrec) do
+      # here
+      {:ok, iodata} -> {:ok, iodata<> "\r\n" }
+      {:error, _err} -> {:error, :invalid_map}
+    end
+  end
+
+  def sendPUBCOMP(messageId) do
+    pubcom = %{
+      type: "PUBCOMP",
+      msgId: messageId
+    }
+
+    case Jason.encode(pubcom) do
+      {:ok, iodata} -> {:ok, iodata <> "\r\n"}
+      {:error, _err} -> {:error, :invalid_map}
+    end
+  end
+
   def handle_cast({:serve}, state) do
     socket = state.socket
     serveLoop(socket)
@@ -27,7 +52,7 @@ defmodule Publisher do
         {:ok, line} ->
           case parseCommands(line) do
             {:ok, command} ->
-              runCommand(command, socket)
+              runCommand(command)
 
             {:error, _} = err ->
               err
@@ -43,43 +68,44 @@ defmodule Publisher do
   end
 
   defp parseCommands(line) when is_binary(line) do
-    line = String.downcase(line)
+    command =
+      case Jason.decode(line) do
+        {:ok, map} ->
+          map
 
-    case String.split(line) do
-      ["create", topic] -> {:ok, {:create, topic}}
-      ["pub", topic] -> {:ok, {:pub, topic}}
-      _ -> {:error, :unknown_command}
-    end
-  end
+        {:error, error} ->
+          error
+      end
 
-  defp receiveMessage(topic, message, socket) do
-    case TCPServer.read_line(socket) do
-      {:ok, line} ->
-        case String.split(line) do
-          ["end"] ->
-            Exchanger.sendMessage(topic, message)
-
-          _ ->
-            message = message <> line
-            receiveMessage(topic, message, socket)
-        end
-
-      {:error, errMessage} = err ->
-        message = message <> errMessage
-        Exchanger.sendMessage("deadLetterChan", message)
-        TCPServer.write_line(socket, err)
-    end
-  end
-
-  defp runCommand(command, socket) do
     case command do
-      {:create, topic} ->
-        Exchanger.createTopic(topic)
-        {:ok, "OK\r\n"}
+      # ["create", topic] -> {:ok, {:create, topic}}
+      %{"type" => "PUB", "topic" => topic, "msg" => message} ->
+        {:ok, {:pub, topic, message}}
 
-      {:pub, topic} ->
-        receiveMessage(topic, "", socket)
-        {:ok, "OK\r\n"}
+      %{"type" => "PUBREL", "msgId" => msgId} ->
+        {:ok, {:pubrel, msgId}}
+
+      %Jason.DecodeError{} ->
+        # save the command in dead letter channel
+        {:error, {:invalid_json, line}}
+
+      _ ->
+        # save the command in dead letter channel
+        {:error, {:unknown_command, line}}
+    end
+  end
+
+  defp runCommand(command) do
+    case command do
+      {:pub, topic, message} ->
+        messageId =:rand.uniform(1)   #65535
+        Exchanger.storeMessage(messageId, message, topic)
+        # this will return the pubrec
+        sendPUBREC(messageId)
+
+      {:pubrel, msgId} ->
+        Exchanger.pubRelPublisher(msgId)
+        sendPUBCOMP(msgId)
 
       _ ->
         {:ok, "NOT IMPLEMENTED\r\n"}

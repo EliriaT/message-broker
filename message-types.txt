@@ -1,0 +1,28 @@
+[ 
+    { "type": "SUB",  "topic": "meaw"  } ,
+
+ {"type": "UNSUB", "topic": "meaw" } ,
+
+// to broker
+
+{ "type": "PUB","topic": "meaw","msg": "doremi" } ,
+
+
+// to consumer
+
+{ "type": "PUB","topic": "meaw","msg": "doremifasolasi", "msgId": 1 }  ,
+
+ //  the broker will start sending the message to subscribers and send a PUBCOMP. Each sending of message should be in a separete task. The subscriber will make the message available to application and send a PUBCOMP
+   
+ {  "type": "PUBREL", "msgId": 1 }  ,
+
+   
+   // from CONSUMER, to SERVER
+{ "type": "PUBREC","msgId": 1, "topic": "meaw" } ,
+
+//  the client can delete the message or in case of broker move the pointer
+
+{ "type": "PUBCOMP", "msgId": 1,  "topic": "meaw"}
+
+
+]

@@ -9,25 +9,79 @@ defmodule Consumer do
   def init({socket}) do
     Logger.info("Consumer #{inspect(self())} is created...")
 
-    {:ok, %{socket: socket}}
+    {:ok, %{socket: socket, name: "", pubrec: [], pubcomp: []}}
   end
 
   def serveSocket(pid) do
     GenServer.cast(pid, {:serve})
   end
 
-  def handle_cast({:serve}, state) do
-    socket = state.socket
-    serveLoop(socket)
+  def selfServeSockerLoop(pid) do
+    GenServer.cast(pid, {:serveLoop})
   end
 
-  defp serveLoop(socket) do
+  def handle_cast({:serve}, state) do
+    socket = state.socket
+    # before serving the client, it must login
+    username = askToLogin(socket, 0)
+
+    case Registry.register(Registry.Consumers, username, []) do
+      {:ok, _} ->
+        TCPServer.write_line(socket, {:ok, "Succesfully logged in!\r\n"})
+        nil
+
+      {:error, {:already_registered, _p}} ->
+        TCPServer.write_line(socket, {:error, "A connection for this username already exists"})
+    end
+
+    state = Map.put(state, :name, username)
+
+    serveLoop(socket, username)
+
+    {:noreply, state}
+  end
+
+  def handle_cast({:serveLoop}, state) do
+    serveLoop(state.socket, state.name)
+
+    {:noreply, state}
+  end
+
+  def askToLogin(socket, 5) do
+    TCPServer.write_line(socket, {:error, "Unknown login error"})
+    exit(:no_login)
+  end
+
+  # login would ideally be an UUID
+  def askToLogin(socket, num) do
+    TCPServer.write_line(socket, {:ok, "Please login!\r\n"})
+
+    case TCPServer.read_line(socket) do
+      {:ok, line} ->
+        line = String.downcase(line)
+
+        case String.split(line) do
+          ["login", username] ->
+
+            username
+
+          _ ->
+            askToLogin(socket, num + 1)
+        end
+
+      {:error, _} = err ->
+        TCPServer.write_line(socket, err)
+        askToLogin(socket, num + 1)
+    end
+  end
+
+  defp serveLoop(socket, username) do
     command =
       case TCPServer.read_line(socket) do
         {:ok, line} ->
           case parseCommands(line) do
             {:ok, command} ->
-              runCommand(command, socket)
+              runCommand(command, username, socket)
 
             {:error, _} = err ->
               err
@@ -39,29 +93,64 @@ defmodule Consumer do
 
     TCPServer.write_line(socket, command)
 
-    serveLoop(socket)
+    # send a message back to itself so that this function will be called again. I need this because of the timer per topic configuration
+    selfServeSockerLoop(self())
   end
 
   # commands are case insensitive
   defp parseCommands(line) when is_binary(line) do
-    line = String.downcase(line)
+    # line = String.downcase(line)
+    command =
+      case Jason.decode(line) do
+        {:ok, map} ->
+          map
 
-    case String.split(line) do
-      ["sub", topic] -> {:ok, {:subscribe, topic}}
-      ["unsub", topic] -> {:ok, {:unsubscribe, topic}}
-      _ -> {:error, :unknown_command}
+        {:error, error} ->
+          error
+      end
+
+    case command do
+      %{"type" => "SUB", "topic" => topic} ->
+        {:ok, {:subscribe, topic}}
+
+      %{"type" => "UNSUB", "topic" => topic} ->
+        {:ok, {:unsubscribe, topic}}
+
+      %{"type" => "PUBREC", "msgId" => messageId, "topic" => topic} ->
+        {:ok, {:pubrec, messageId, topic}}
+
+      %{"type" => "PUBCOMP", "msgId" => messageId, "topic" => topic} ->
+        {:ok, {:pubcomp, messageId, topic}}
+
+      %Jason.DecodeError{} ->
+        {:error, {:invalid_json, line}}
+
+      _ ->
+        # save the command in dead letter channel
+        {:error, {:unknown_command, line}}
     end
   end
 
-  defp runCommand(command, socket) do
+  defp runCommand(command, username, socket) do
     case command do
       {:subscribe, topic} ->
         # Should the subscribe be asynchronous or synchronous? if async I can return ok or if not ok
-        Exchanger.subscribe(topic, socket)
+        Exchanger.subscribe(topic, username, socket)
         {:ok, "OK\r\n"}
 
       {:unsubscribe, topic} ->
-        Exchanger.unsubscribe(topic, socket)
+        Exchanger.unsubscribe(topic, username)
+        {:ok, "OK\r\n"}
+
+      {:pubrec, messageId, topic} ->
+        # confirm message receiving
+        pid = Exchanger.createTopic(topic)
+        Topic.recConfirm(pid, messageId, username, socket)
+        {:ok, "OK\r\n"}
+
+      {:pubcomp, messageId, topic} ->
+        pid = Exchanger.createTopic(topic)
+        Topic.compConfirm(pid, messageId, username, socket)
         {:ok, "OK\r\n"}
 
       _ ->

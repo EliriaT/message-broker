@@ -56,8 +56,15 @@ defmodule TCPServer do
     :gen_tcp.send(socket, text)
   end
 
-  def write_line(socket, {:error, :unknown_command}) do
+  def write_line(socket, {:error, {:invalid_json, command}}) do
     # Known error; write to the client
+    Exchanger.sendMessage("deadLetterChan", command)
+    :gen_tcp.send(socket, "INVALID JSON\r\n")
+  end
+
+  def write_line(socket, {:error, {:unknown_command, command}}) do
+    # Known error; write to the client
+    Exchanger.sendMessage("deadLetterChan", command)
     :gen_tcp.send(socket, "UNKNOWN COMMAND\r\n")
   end
 
@@ -66,12 +73,11 @@ defmodule TCPServer do
     # The connection was closed, exit politely
     IO.puts("Connection on process #{inspect(self())} closed by client")
     exit(:shutdown)
-
   end
 
   def write_line(socket, {:error, error}) do
     # Unknown error; write to the client and exit
-    :gen_tcp.send(socket, "ERROR\r\n")
+    :gen_tcp.send(socket, "ERROR #{inspect(error)}\r\n")
     exit(error)
   end
 end

@@ -6,7 +6,7 @@ defmodule MessageBroker do
   def start(_type, _args) do
     # IO.puts( Mix.env())
     # if Mix.env() == :dev do
-    #   # :observer.start()
+    :observer.start()
     #   IO.puts( Mix.env())
     # end
 
@@ -15,7 +15,7 @@ defmodule MessageBroker do
 
     children = [
       {PublisherSupervisor, {}},
-      {ConsumerSupervisor, {}},
+      {ConsumerAndRegistrySupervisor, {}},
       {TopicAndRegistrySupervisor, {}},
       {Exchanger, {}},
 
