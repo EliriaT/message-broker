@@ -9,7 +9,7 @@ defmodule TopicSupervisor do
   # What if the registry crashes but topic supervisor alive?
   def init(_args) do
     Logger.info("TopicSupervisor is running...")
-    DynamicSupervisor.init(strategy: :one_for_one, restart: :transient)
+    DynamicSupervisor.init(strategy: :one_for_one, restart: :permanent, max_restarts: 5_000_000)
   end
 
   def start_new_child(title) do

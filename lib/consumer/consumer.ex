@@ -61,7 +61,7 @@ defmodule Consumer do
         line = String.downcase(line)
 
         case String.split(line) do
-          ["login", username] ->
+          ["log", username] ->
 
             username
 

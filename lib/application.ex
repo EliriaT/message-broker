@@ -33,7 +33,6 @@ defmodule MessageBroker do
     opts = [strategy: :one_for_one, name: MessageBroker.Supervisor]
     Supervisor.start_link(children, opts)
 
-    TopicSupervisor.start_new_child("deadLetterChan")
   end
 
   def main(_args \\ []) do

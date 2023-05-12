@@ -8,6 +8,8 @@ defmodule Exchanger do
 
   def init({}) do
     Logger.info("Exchanger  #{inspect(self())} is created...")
+    
+    TopicSupervisor.start_new_child("deadLetterChan")
 
     # these messages should be persisted. On init, exchanger must read all the persisted messages with their ids. On PUB the message is persisted, on PUBREL deleted and send to the topic.
     # After failure, if the message is still existent, it means the publisher did not receive a PUBCOMP, which means it will send a PUBREL again
@@ -40,7 +42,7 @@ defmodule Exchanger do
     end
   end
 
-  def subscribe(title, username,socket) do
+  def subscribe(title, username, socket) do
     GenServer.cast(Exchanger, {:subscribe, title, username, socket})
   end
 
@@ -50,12 +52,16 @@ defmodule Exchanger do
 
   def sendMessage("deadLetterChan", message) do
     pid = createTopic("deadLetterChan")
+    Topic.saveMessageInDB("deadLetterChan", message)
+    Topic.storeMessageInternally(pid, message)
     Topic.sendMessageToSubs(pid, message)
   end
 
   def sendMessage(topic, %{messageID: id, message: message, topic: topic}) do
     pid = createTopic(topic)
-    Topic.sendMessageToSubs(pid, %{messageID: id, message: message, topic: topic})
+    Topic.saveMessageInDB(topic, message) #sync
+    Topic.storeMessageInternally(pid,  %{messageID: id, message: message, topic: topic}) #sync
+    Topic.sendMessageToSubs(pid, %{messageID: id, message: message, topic: topic}) #async
   end
 
   # creates if not existent, returns the pid

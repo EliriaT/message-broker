@@ -1,5 +1,6 @@
 defmodule Topic do
-  use GenServer, restart: :transient
+  alias Task.Supervisor
+  use GenServer, restart: :permanent
   require Logger
 
   def start_link({title}) do
@@ -10,7 +11,15 @@ defmodule Topic do
   def init({title}) do
     Logger.info("Topic #{inspect(title)} #{inspect(self())} is created...")
 
-    {:ok, %{title: title, subscribers: [], pubrec: [], pubcomp: []}}
+    PersistentEts.new(String.to_atom(title), "./lib/topic/topics-db/#{title}.tab", [
+      :set,
+      :named_table,
+      :public
+    ])
+
+    messages = getMessagesFromDB(title)
+
+    {:ok, %{title: title, subscribers: [], pubrec: [], pubcomp: [], messages: messages, indexes: [], unSubscribedIndexes: []}}
   end
 
   def getSubscribers(pid) do
@@ -30,8 +39,43 @@ defmodule Topic do
   end
 
   # deadletter channel TODO, I should just store it in the queue state
+  # this will only be reached by the deadLetterChan
   def sendMessageToSubs(pid, message) do
-    # GenServer.cast(pid, {:sendMessage, message})
+    # just add the message in the local queue
+    # saveMessageInDB(String.to_atom("deadLetterChan"), message)
+    # I should send the message to interested subscribers. But for now the dead letter chan will only store the messages. No sending.
+  end
+
+  def getMessagesFromDB(title) do
+    messages =
+      case :ets.lookup(String.to_atom(title), "messages") do
+        [{"messages", list}] ->
+          # append a new message at the end of the list
+          list
+
+        [] ->
+          []
+      end
+      messages
+  end
+
+  def saveMessageInDB(title, message) do
+    newList =
+      case :ets.lookup(String.to_atom(title), "messages") do
+        [{"messages", list}] ->
+          # append a new message at the end of the list
+          list ++ [message]
+
+        [] ->
+          [message]
+      end
+
+    :ets.insert(String.to_atom(title), {"messages", newList})
+    PersistentEts.flush(String.to_atom(title))
+  end
+
+  def storeMessageInternally(pid, message) do
+    GenServer.call(pid, {:storeMessageIntern, message})
   end
 
   def recConfirm(pid, messageID, username, socket) do
@@ -46,6 +90,13 @@ defmodule Topic do
       pid,
       {:compConfirm, %{messageID: messageID, username: username, socket: socket}}
     )
+  end
+
+  def handle_call({:storeMessageIntern, message}, from, state) do
+    messages = Map.get(state, :messages, [])
+    messages = messages ++ [message]
+    state = Map.put(state, :messages, messages)
+    {:reply, :done, state}
   end
 
   # add subscriber only if not subscribed early
@@ -279,8 +330,6 @@ defmodule Topic do
   end
 
   def checkCOMTimeout(%{messageID: messageID, username: username, socket: socket}, count) do
-
-
     case count do
       5 ->
         # move pointer anyway, because if pubcomp not received, it means there is a problem with the client, and it received the message by acknowledging with pubrec

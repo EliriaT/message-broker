@@ -104,6 +104,7 @@ defmodule Publisher do
         sendPUBREC(messageId)
 
       {:pubrel, msgId} ->
+        # here immedietely the message will be persisted, after this pubcomp sent
         Exchanger.pubRelPublisher(msgId)
         sendPUBCOMP(msgId)
 
