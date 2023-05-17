@@ -25,7 +25,7 @@
 
 ## Some notes
 
-1. If a consumer is disconnected, his last sent message is persisted on the message broker side. But in order to retrieve the messages that were lost while the consumer was disconnected or unsubscribed, the consumer MUST again subscribe to each topic it previously unsubscribed or if disconnected. Message broker does not implement right now consumer to topics storage. There is only a topic to consumers storage and relation. If message broker detects that the consumer is disconnected, it unsubsribes the consumer, but stores the index of the last sent message. On subscribe, if this index is found present, the message broker (the topic actor) will start sending message by message from the last message index. If the consumer will not subscribe again, he will not receive even the latest messages.
+1. If a consumer is disconnected, his last sent message is persisted on the message broker side. But in order to retrieve the messages that were lost while the consumer was disconnected or unsubscribed, the consumer MUST again subscribe to each topic it previously unsubscribed or all topics if disconnected. Message broker does not implement right now consumer to topics storage. There is only a topic to consumers storage and relation. If message broker detects that the consumer is disconnected, it unsubsribes the consumer, but stores the index of the last sent message. On subscribe, if this index is found present, the message broker (the topic actor) will start sending message by message from the last message index. If the consumer will not subscribe again, he will not receive even the latest messages.
 
 2. Topic will detect consumer disconnection by failing to publish a message to consumer
 
