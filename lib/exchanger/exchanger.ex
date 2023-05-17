@@ -8,7 +8,7 @@ defmodule Exchanger do
 
   def init({}) do
     Logger.info("Exchanger  #{inspect(self())} is created...")
-    
+
     TopicSupervisor.start_new_child("deadLetterChan")
 
     # these messages should be persisted. On init, exchanger must read all the persisted messages with their ids. On PUB the message is persisted, on PUBREL deleted and send to the topic.
@@ -59,7 +59,7 @@ defmodule Exchanger do
 
   def sendMessage(topic, %{messageID: id, message: message, topic: topic}) do
     pid = createTopic(topic)
-    Topic.saveMessageInDB(topic, message) #sync
+    Topic.saveMessageInDB(topic,  %{messageID: id, message: message, topic: topic}) #sync
     Topic.storeMessageInternally(pid,  %{messageID: id, message: message, topic: topic}) #sync
     Topic.sendMessageToSubs(pid, %{messageID: id, message: message, topic: topic}) #async
   end

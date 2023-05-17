@@ -1,5 +1,4 @@
 defmodule Topic do
-  alias Task.Supervisor
   use GenServer, restart: :permanent
   require Logger
 
@@ -19,9 +18,24 @@ defmodule Topic do
 
     messages = getMessagesFromDB(title)
 
-    {:ok, %{title: title, subscribers: [], pubrec: [], pubcomp: [], messages: messages, indexes: [], unSubscribedIndexes: []}}
+    {:ok,
+     %{
+       title: title,
+       subscribers: [],
+       pubrec: [],
+       pubcomp: [],
+       messages: messages,
+       subscribedIndexes: [],
+       unSubscribedIndexes: []
+     }}
   end
 
+  # index %{username: "sdf", index: -1}
+
+  # on subscribe check if not present in subscribers, then add it. Check if not present in subscribedIndexes, then check if not present in unSubscribedIndexes, if present add it from unsub list to sub list, if no, create a new one with index 0.
+  # on unsubscribe get the index from subscribedIndexes and put it in unSubscribedIndexes, it should remain in subscribers list
+  # if unsubscribed permanently is implemented,   I should delete the subscriber from the subscriber list and delete its index from subscribedIndexes
+  # on connection disconnected I should move the index from subscribed to unsubcribed
   def getSubscribers(pid) do
     GenServer.cast(pid, {:subscribers})
   end
@@ -34,16 +48,27 @@ defmodule Topic do
     GenServer.cast(pid, {:unsubscribe, username})
   end
 
+  def sendMessageToONESub(pid, %{messageID: id, message: message, topic: topic}, %{
+        username: username,
+        socket: socket
+      }) do
+    GenServer.cast(
+      pid,
+      {:sendMessageToSub, %{messageID: id, message: message, topic: topic},
+       %{username: username, socket: socket}}
+    )
+  end
+
   def sendMessageToSubs(pid, %{messageID: id, message: message, topic: topic}) do
     GenServer.cast(pid, {:sendMessage, %{messageID: id, message: message, topic: topic}})
   end
 
-  # deadletter channel TODO, I should just store it in the queue state
   # this will only be reached by the deadLetterChan
+  # saveMessageInDB(String.to_atom("deadLetterChan"), message)
   def sendMessageToSubs(pid, message) do
-    # just add the message in the local queue
-    # saveMessageInDB(String.to_atom("deadLetterChan"), message)
-    # I should send the message to interested subscribers. But for now the dead letter chan will only store the messages. No sending.
+    # just add the message in the local queue and store it
+
+    # I should send the message to intersted subscribers. But for now the dead letter chan will only store the messages. No sending.
   end
 
   def getMessagesFromDB(title) do
@@ -56,7 +81,8 @@ defmodule Topic do
         [] ->
           []
       end
-      messages
+
+    messages
   end
 
   def saveMessageInDB(title, message) do
@@ -64,7 +90,7 @@ defmodule Topic do
       case :ets.lookup(String.to_atom(title), "messages") do
         [{"messages", list}] ->
           # append a new message at the end of the list
-          list ++ [message]
+          [message | list]
 
         [] ->
           [message]
@@ -92,35 +118,140 @@ defmodule Topic do
     )
   end
 
+  # here I have to reindex and subscribedIndexes and unSubscribedIndexes
   def handle_call({:storeMessageIntern, message}, from, state) do
     messages = Map.get(state, :messages, [])
-    messages = messages ++ [message]
+    messages = [message | messages]
     state = Map.put(state, :messages, messages)
+
+    subscribedIndexes = Map.get(state, :subscribedIndexes)
+
+    subscribedIndexes =
+      Enum.map(subscribedIndexes, fn sub ->
+        case Map.get(sub, :index) do
+          -1 ->
+            Map.put(sub, :index, sub[:index] + 1)
+            # sub
+
+          _ ->
+            Map.put(sub, :index, sub[:index] + 1)
+        end
+      end)
+
+    unSubscribedIndexes = Map.get(state, :unSubscribedIndexes)
+
+    unSubscribedIndexes =
+      Enum.map(unSubscribedIndexes, fn sub -> Map.put(sub, :index, sub[:index] + 1) end)
+
+    state = Map.put(state, :unSubscribedIndexes, unSubscribedIndexes)
+    state = Map.put(state, :subscribedIndexes, subscribedIndexes)
+
     {:reply, :done, state}
   end
 
   # add subscriber only if not subscribed early
   def handle_cast({:subscribe, username, socket}, state) do
     state =
-      case Enum.member?(Map.get(state, :subscribers), username) do
-        true ->
-          state
-
-        false ->
+      case Enum.find(Map.get(state, :subscribers), fn sub -> sub[:username] == username end) do
+        nil ->
           subscribers = state.subscribers
           newSubscriber = %{socket: socket, username: username}
           subscribers = [newSubscriber | subscribers]
           Map.put(state, :subscribers, subscribers)
+
+        _ ->
+          state
+      end
+
+    # unSubscribedIndexes
+    state =
+      case Enum.find(Map.get(state, :subscribedIndexes), fn sub -> sub[:username] == username end) do
+        nil ->
+          # if not present in subscribed indexex, it means it wasn't disconnected accidentaly, and check in unsubscribedIndexes
+          state =
+            case Enum.find(Map.get(state, :unSubscribedIndexes), fn sub ->
+                   sub[:username] == username
+                 end) do
+              nil ->
+                # create a new index map in subscribedIndexes
+                newIndex = %{username: username, index: -1}
+                subscribedIndexes = Map.get(state, :subscribedIndexes)
+                subscribedIndexes = [newIndex | subscribedIndexes]
+                state = Map.put(state, :subscribedIndexes, subscribedIndexes)
+                state
+
+              unSubIndex ->
+                # move index from unsubscribed to the subscribed list
+
+                subscribedIndexes = Map.get(state, :subscribedIndexes)
+                subscribedIndexes = [unSubIndex | subscribedIndexes]
+                state = Map.put(state, :subscribedIndexes, subscribedIndexes)
+
+                # delete index from unsubscribed index list
+                unSubscribedIndexes = Map.get(state, :unSubscribedIndexes)
+
+                unSubscribedIndexes =
+                  Enum.filter(unSubscribedIndexes, fn unSub -> unSub[:username] !== username end)
+
+                state = Map.put(state, :unSubscribedIndexes, unSubscribedIndexes)
+
+                # CHECK if index is not -1, start sending the last not received message
+                case unSubIndex[:index] do
+                  -1 ->
+                    nil
+
+                  indx ->
+                    messages = Map.get(state, :messages)
+                    message = Enum.at(messages, indx)
+
+                    sendMessageToONESub(self(), message, %{
+                      username: username,
+                      socket: socket
+                    })
+                end
+
+                state
+            end
+
+          state
+
+        _ ->
+          state
       end
 
     {:noreply, state}
   end
+
+  # on unsubscribe get the index from subscribedIndexes and put it in unSubscribedIndexes
+  # it should not remain in general subscribers list, because the messages must not be sent to this subscriber
 
   def handle_cast({:unsubscribe, username}, state) do
     filteredSubribers =
       Enum.filter(Map.get(state, :subscribers), fn s -> s[:username] !== username end)
 
     state = Map.put(state, :subscribers, filteredSubribers)
+
+    state =
+      case Enum.find(Map.get(state, :subscribedIndexes), fn sub -> sub[:username] == username end) do
+        nil ->
+          # it means unfortunately that there was a strange bug error on subscribing , this should not happen
+          state
+
+        subIndex ->
+          unSubscribedIndexes = Map.get(state, :unSubscribedIndexes)
+          unSubscribedIndexes = [subIndex | unSubscribedIndexes]
+          state = Map.put(state, :unSubscribedIndexes, unSubscribedIndexes)
+
+          subscribedIndexes = Map.get(state, :subscribedIndexes)
+
+          subscribedIndexes =
+            Enum.filter(subscribedIndexes, fn sub -> sub[:username] !== username end)
+
+          state = Map.put(state, :subscribedIndexes, subscribedIndexes)
+
+          state
+      end
+
     {:noreply, state}
   end
 
@@ -130,7 +261,12 @@ defmodule Topic do
     {:noreply, state}
   end
 
-  def handle_cast({:sendMessage, %{messageID: messageId, message: message, topic: topic}}, state) do
+  # send a message to only one subscriber
+  def handle_cast(
+        {:sendMessageToSub, %{messageID: messageId, message: message, topic: topic},
+         %{username: username, socket: socket}},
+        state
+      ) do
     pubMessage = %{"type" => "PUB", "topic" => topic, "msg" => message, "msgId" => messageId}
 
     pubJson =
@@ -140,7 +276,61 @@ defmodule Topic do
       end
 
     newPubrecEntries =
-      Enum.map(Map.get(state, :subscribers), fn subscriber ->
+      Enum.map([%{username: username, socket: socket}], fn subscriber ->
+        Process.send_after(
+          self(),
+          {:checkPubRec,
+           %{
+             messageID: messageId,
+             message: message,
+             topic: topic,
+             username: subscriber[:username],
+             socket: subscriber[:socket]
+           }, 0},
+          10000
+        )
+
+        TCPServer.write_line(subscriber[:socket], pubJson)
+
+        %{
+          messageID: messageId,
+          received: false,
+          username: subscriber[:username],
+          socket: subscriber[:socket]
+        }
+      end)
+
+    pubrecEntries = Map.get(state, :pubrec)
+
+    concat = newPubrecEntries ++ pubrecEntries
+    state = Map.put(state, :pubrec, concat)
+
+    {:noreply, state}
+  end
+
+  # send a recent message to all recent subscribers at index 0
+  def handle_cast({:sendMessage, %{messageID: messageId, message: message, topic: topic}}, state) do
+    pubMessage = %{"type" => "PUB", "topic" => topic, "msg" => message, "msgId" => messageId}
+
+    pubJson =
+      case Jason.encode(pubMessage) do
+        {:ok, iodata} -> {:ok, iodata <> "\r\n"}
+        {:error, _err} -> {:error, :invalid_map}
+      end
+
+    # select only subscribers with index 0
+    subscribedIndexes = Map.get(state, :subscribedIndexes)
+
+    latestSubscribers =
+      Enum.filter(Map.get(state, :subscribers), fn subscriber ->
+        oneIndex =
+          Enum.find(subscribedIndexes, fn sub -> sub[:username] == subscriber[:username] end)
+
+        oneIndex[:index] == 0
+      end)
+
+    newPubrecEntries =
+      Enum.map(latestSubscribers, fn subscriber ->
         Process.send_after(
           self(),
           {:checkPubRec,
@@ -244,7 +434,10 @@ defmodule Topic do
 
     case count do
       5 ->
-        Exchanger.sendMessage("deadLetterChan", pubJson)
+        # here I should instead unsubscribe the user
+        removeSubscriber(self(), username)
+
+      # Exchanger.sendMessage("deadLetterChan", pubJson)
 
       _ ->
         Process.send_after(
@@ -413,8 +606,47 @@ defmodule Topic do
       end)
 
     state = Map.put(state, :pubcomp, [oneEntry | allEntriesFiltered])
-    # here I should move the pointer
-    IO.puts("Pointer moved!")
+
+    # here I should move the pointer by decreasing it with one
+    # the latest message has index 0
+    subscribedIndexes = Map.get(state, :subscribedIndexes)
+
+    filteredSubscribedIndexes =
+      Enum.filter(subscribedIndexes, fn sub -> sub[:username] != username end)
+
+    oneIndex = Enum.find(subscribedIndexes, fn sub -> sub[:username] == username end)
+
+    # index will become -1 if the consumer is up to date with messages
+    index =oneIndex[:index] - 1
+      # if oneIndex[:index] == -1 do
+      #   oneIndex[:index]
+      # else
+      #   ind = oneIndex[:index] - 1
+      #   ind
+      # end
+
+    subscribedIndexes = [
+      %{username: oneIndex[:username], index: index} | filteredSubscribedIndexes
+    ]
+
+    state = Map.put(state, :subscribedIndexes, subscribedIndexes)
+
+    # check if index is -1, if not, start sending the next message
+    case index do
+      -1 ->
+        nil
+
+      indx ->
+        messages = Map.get(state, :messages)
+        message = Enum.at(messages, indx)
+
+        sendMessageToONESub(self(), message, %{
+          username: username,
+          socket: socket
+        })
+    end
+
+    IO.puts("Pointer moved! Next message sent if present!")
     {:noreply, state}
   end
 end

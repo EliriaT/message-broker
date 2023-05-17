@@ -62,7 +62,6 @@ defmodule Consumer do
 
         case String.split(line) do
           ["log", username] ->
-
             username
 
           _ ->
@@ -86,6 +85,12 @@ defmodule Consumer do
             {:error, _} = err ->
               err
           end
+
+        {:error, :closed} = err ->
+          # move subscribed index to unsubscribed index
+          # but right not it is not possible because I don't have any relation between a consumer and its topics. I only have a relation from a topic to consumers.
+          # a better approach right now is to move the index from subscribed indexes to unsubscribed indexes when a message can't be delivered to a client
+          err
 
         {:error, _} = err ->
           err

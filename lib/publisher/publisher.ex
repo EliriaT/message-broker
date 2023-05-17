@@ -98,7 +98,7 @@ defmodule Publisher do
   defp runCommand(command) do
     case command do
       {:pub, topic, message} ->
-        messageId =:rand.uniform(1)   #65535
+        messageId =:rand.uniform(10)   #65535
         Exchanger.storeMessage(messageId, message, topic)
         # this will return the pubrec
         sendPUBREC(messageId)
