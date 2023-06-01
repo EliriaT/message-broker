@@ -10,6 +10,8 @@ Implemented:
 * Represents a TCP server
 * Dead letter channel
 * Run with executable / docker 
+* Multiple topics, multiple subscribers, multiple publisher
+* Fault tolerance thanks to supervisors
 
 ## Supervision Tree
 ![ast](https://github.com/EliriaT/message-broker/blob/main/Diagrams/Lab3SupervisionTree.png)
@@ -65,8 +67,261 @@ or
 
 2. Topic will detect consumer disconnection by failing to publish a message to consumer
 
-3. For future to dos, I can store in the local db usernames to topics storage
+3. For future to dos, I can store in the local db topic to usernames storage in the Exchanger. This will allow receiving lost messages after disconnection, without the neccessity to subscribe to previously subscribed topics. The exchanger will subscribe the consumer without it doing it by itself.
 
-4. Topic created only when a consumer subscribes to it
+4. Topic is created only when a consumer subscribes to it
 
+## Demo using telnet 
+1. Build and run the app:
 
+```
+mix escript.build
+./message_broker
+```
+
+2. Applications logs:
+```
+Generated escript message_broker with MIX_ENV=dev
+
+(Erlang:17286): Gtk-WARNING **: 11:45:55.874: Drawing a gadget with negative dimensions. Did you forget to allocate a size? (node tab owner GtkNotebook)
+
+(Erlang:17286): Gtk-WARNING **: 11:45:55.888: Drawing a gadget with negative dimensions. Did you forget to allocate a size? (node tab owner GtkNotebook)
+
+11:45:55.883 [info]  PublisherSupervisor is running...
+
+11:45:55.891 [info]  ConsumerSupervisor is running...
+
+11:45:55.902 [info]  TopicSupervisor is running...
+
+11:45:55.907 [info]  Exchanger  #PID<0.131.0> is created...
+
+11:45:55.915 [info]  Topic "deadLetterChan" #PID<0.132.0> is created...
+
+11:45:55.960 [info]  Server publisher accepting connections on port 4041
+
+11:45:55.961 [info]  Server consumer accepting connections on port 4040
+```
+
+3. Connect as a consumer:
+```
+$ telnet 127.0.0.1 4040
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+Please login!
+```
+
+4. Trying to subscribe without log in: 
+
+```
+$ telnet 127.0.0.1 4040
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+Please login!
+  { "type": "SUB",  "topic": "meaw"  }
+Please login!
+```
+
+5. Log in and subscribing to a topic:
+```
+log Irina
+Succesfully logged in!
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+```
+
+6.Message broker logs:
+
+`11:53:51.662 [info]  Topic "meaw" #PID<0.161.0> is created...`
+
+7. Connecting as publisher:
+```
+telnet 127.0.0.1 4041
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+```
+
+8. Publishing a message:
+```
+{ "type": "PUB","topic": "meaw","msg": "Hi there!" } 
+```
+
+9. Message broker response:
+```
+telnet 127.0.0.1 4041
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+{ "type": "PUB","topic": "meaw","msg": "Hi there!" } 
+{"msgId":4,"type":"PUBREC"}
+```
+
+10. PUBREL :
+```
+ {"type": "PUBREL", "msgId": 4 } 
+```
+
+11. Message broker response:
+```
+telnet 127.0.0.1 4041
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+{ "type": "PUB","topic": "meaw","msg": "Hi there!" } 
+{"msgId":4,"type":"PUBREC"}
+ {"type": "PUBREL", "msgId": 4 } 
+{"msgId":4,"type":"PUBCOMP"}
+```
+
+12. On the consumer telnet connection, the message appeared 5 times, because no PUBREC is send from consumer to message broker. After 5 failures, message broker unsubscribed the consumer, because it did not receive a PUBREC:
+```
+$ telnet 127.0.0.1 4040
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+Please login!
+  { "type": "SUB",  "topic": "meaw"  }
+Please login!
+log Irina
+Succesfully logged in!
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+```
+13. The consumer has to log in again (if disconnected, but actually here the connection is kept), and subscribe again. Message broker again tries to publish the message:
+```
+ telnet 127.0.0.1 4040
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+Please login!
+  { "type": "SUB",  "topic": "meaw"  }
+Please login!
+log Irina
+Succesfully logged in!
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+log
+INVALID JSON
+log Irina
+INVALID JSON
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+```
+
+14. Consumer acknowledges the receiving of message with PUBREC:
+```
+telnet 127.0.0.1 4040
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+Please login!
+  { "type": "SUB",  "topic": "meaw"  }
+Please login!
+log Irina
+Succesfully logged in!
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+log
+INVALID JSON
+log Irina
+INVALID JSON
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{ "type": "PUBREC","msgId": 4, "topic": "meaw" }
+OK
+```
+
+15. The message broker sends PUBREL:
+```
+$ telnet 127.0.0.1 4040
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+Please login!
+  { "type": "SUB",  "topic": "meaw"  }
+Please login!
+log Irina
+Succesfully logged in!
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+log
+INVALID JSON
+log Irina
+INVALID JSON
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{ "type": "PUBREC","msgId": 4, "topic": "meaw" }
+OK
+{"msgId":4,"type":"PUBREL"}
+```
+16. Consumer sends PUBCOMP, of the same message id:
+```
+$ telnet 127.0.0.1 4040
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+Please login!
+  { "type": "SUB",  "topic": "meaw"  }
+Please login!
+log Irina
+Succesfully logged in!
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+log
+INVALID JSON
+log Irina
+INVALID JSON
+{ "type": "SUB",  "topic": "meaw"  }
+OK
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{"msg":"Hi there!","msgId":4,"topic":"meaw","type":"PUB"}
+{ "type": "PUBREC","msgId": 4, "topic": "meaw" }
+OK
+{"msgId":4,"type":"PUBREL"}
+{"type": "PUBCOMP", "msgId": 4,  "topic": "meaw"}
+OK
+```
+
+17. After consumer sends PUBCOMP, the index of the message is moved, and the next message from the queue can be published by message broker.
+In such way, the messages are delivered in the order of arrival and their acknowledgement.
+
+Message broker will retry sending PUBREC to consumer, in the same way it retries to publish the message.
