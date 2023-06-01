@@ -1,0 +1,32 @@
+@startuml
+actor  "Publisher" as P
+participant "Message Broker" as MB
+actor "Consumer" as C
+
+P -> P: Store message
+P -> MB: PUBLISH 
+MB -> MB: Store message
+MB -> P: PUBREC 
+P -> MB: PUBREL
+MB -> C: PUBLISH
+
+MB -> P: PUBCOMP & Message published
+P -> P: Delete message
+
+MB -> C: PUBLISH again if PUBREC not received
+MB -> C: PUBLISH again if PUBREC not received
+MB -> C: PUBLISH again if PUBREC not received
+MB -> C: PUBLISH again if PUBREC not received
+MB -> MB: Unsubscribe username
+
+C -> MB: Log in username on network  reconnect
+MB -> MB: Check username index
+MB -> C: PUBLISH
+C -> C: Store message
+C -> MB: PUBREC
+MB -> C: PUBREL
+C -> C: Message published to apps
+C -> MB: PUBCOMP 
+MB -> MB: Increment message index
+C -> C: Delete message
+@enduml

@@ -1,4 +1,3 @@
-
 @startuml
 actor  "One Consumer" as OC
 collections "Consumers" as C
@@ -23,11 +22,14 @@ OC -> CSer: Start connection
 CSer -> CS: New Consumer
 CS -> C: Create Consumer
 
+
+OC -> C: Log Username
+C -> OC: Succes
 OC -> C: Subscribe
 C -> E: Subscribe
 E -> TS: Create topic if not present
 TS -> T: Create Topic
-E -> T: Add subscriber pointer
+E -> T: Add or check subscriber pointer
 
 
 OP -> PSer: Start connection
@@ -38,12 +40,12 @@ P -> E:  Send topic and message
 
 
 E -> T: Send Message
-T -> E: Message : Subscribers[]
-E -> C: Message to each Subscriber
+
+T -> C: Message to each Subscriber
 
 
 OC -> C: Unsubscribe
-C -> E: Unsubscribe temporarily or forever
-E -> T: Delete subscriber pointer
+C -> E: Unsubscribe 
+E -> T: Move subscriber pointer to Unsubscribe list
 
 @enduml
