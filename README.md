@@ -1,11 +1,47 @@
 # MessageBroker
 
-**TODO: Add description**
+A simple message broker implemented in Elixir, based on the actor concurrency model.
+
+Implemented:
+* Durable queues
+* Persistent messages
+* MQTT QoS2
+* Publish retrial
+* Represents a TCP server
+* Dead letter channel
+* Run with executable / docker 
+
+## Supervision Tree
+![ast](https://github.com/EliriaT/message-broker/blob/main/Diagrams/Lab3SupervisionTree.png)
+
+
+## Message Flow Diagram
+![ast](https://github.com/EliriaT/message-broker/blob/main/Diagrams/MessageFlow.png)
+
+
+## MQTT QoS2 Message Flow Diagram
+![ast](https://github.com/EliriaT/message-broker/blob/main/Diagrams/QoS2.png)
+
+## MQTT QoS2 Retrial Message Flow Diagram
+![ast](https://github.com/EliriaT/message-broker/blob/main/Diagrams/QoS2Retrial.png)
 
 ## Run the app:
 `mix run --no-halt`
+
+or
+
 `iex -S mix`
-`PORT=4040 mix run --no-halt`
+
+or
+
+```
+mix escript.build
+./message_broker
+```
+
+or
+
+`docker run --name message-broker -it --rm  -p 4040:4040  -p 4041:4041 elixir-mb:latest`
 
 ## Useful commands:
 `sudo lsof -i -P -n | grep LISTEN` - Check ports that are on LISTEN
@@ -32,3 +68,5 @@
 3. For future to dos, I can store in the local db usernames to topics storage
 
 4. Topic created only when a consumer subscribes to it
+
+
